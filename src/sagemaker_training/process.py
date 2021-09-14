@@ -22,6 +22,7 @@ import sys
 import six
 
 from sagemaker_training import _entry_point_type, environment, errors, logging_config
+import signal
 
 
 def create(cmd, error_class, cwd=None, capture_error=False, **kwargs):
@@ -69,16 +70,21 @@ def check_error(cmd, error_class, capture_error=False, **kwargs):
         error_class: If there is an exception raised when creating the process.
     """
     process = create(cmd, error_class, capture_error=capture_error, **kwargs)
+    old_handler = None
+    try:
+        old_handler = signal.signal(signal.SIGTERM, lambda *args: process.terminate())
 
-    if capture_error:
-        _, stderr = process.communicate()
-        # This will force the stderr to be printed after stdout
-        # If wait is false and cature error is true, we will never see the stderr.
-        print(stderr.decode(errors="replace"))
-        return_code = process.poll()
-    else:
-        stderr = None
-        return_code = process.wait()
+        if capture_error:
+            _, stderr = process.communicate()
+            # This will force the stderr to be printed after stdout
+            # If wait is false and cature error is true, we will never see the stderr.
+            print(stderr.decode(errors="replace"))
+            return_code = process.poll()
+        else:
+            stderr = None
+            return_code = process.wait()
+    finally:
+        signal.signal(signal.SIGTERM, old_handler)
 
     if return_code:
         raise error_class(return_code=return_code, cmd=" ".join(cmd), output=stderr)
